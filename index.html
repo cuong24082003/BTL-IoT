@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý Cửa Ra Vào</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            width: 80%;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            margin: 10px;
+            border-radius: 5px;
+            transition: 0.3s;
+        }
+
+        .btn-green { background-color: #28a745; color: white; }
+        .btn-red { background-color: #dc3545; color: white; }
+        .btn-blue { background-color: #007bff; color: white; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: center;
+        }
+
+        th { background-color: #007bff; color: white; }
+
+        .camera-container { margin-top: 20px; }
+        #cameraCanvas { width: 100%; max-width: 500px; border-radius: 10px; border: 2px solid gray; }
+        .status-ok { border: 2px solid green !important; }
+        .status-error { border: 2px solid red !important; }
+
+        input {
+            padding: 10px;
+            font-size: 16px;
+            width: 50%;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🚗 Quản Lý Cửa Ra Vào 🚗</h1>
+
+        <div class="camera-container">
+            <h2>📷 Ảnh Từ Camera</h2>
+            <canvas id="cameraCanvas"></canvas>
+            <br>
+            <button class="btn btn-blue" onclick="captureImage()">📸 Chụp Ảnh</button>
+            <button class="btn btn-red" onclick="deleteImage()">🗑️ Xóa Ảnh</button>
+        </div>
+
+        <h2>📂 Lịch Sử Ảnh</h2>
+        <ul id="imageHistory"></ul>
+
+        <div>
+            <label for="bienSoInput">Nhập biển số (hoặc tự động nhận diện):</label>
+            <input type="text" id="bienSoInput" placeholder="Nhập biển số hoặc chờ nhận diện...">
+        </div>
+
+        <div class="controls">
+            <button id="btnOpen" class="btn btn-green" onclick="sendCommand('open')">🔓 Mở Cửa</button>
+            <button id="btnClose" class="btn btn-red" onclick="sendCommand('close')" disabled>🔒 Đóng Cửa</button>
+        </div>
+
+        <h2>📜 Lịch Sử Ra Vào</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Biển Số</th>
+                    <th>Thời Gian</th>
+                    <th>Trạng Thái</th>
+                </tr>
+            </thead>
+            <tbody id="lich_su"></tbody>
+        </table>
+    </div>
+
+    <script>
+        var socket = io.connect("http://" + document.domain + ":" + location.port);
+        var isDoorOpen = false;
+        var lastId = 0;
+
+        // Kết nối WebSocket để nhận hình ảnh từ server
+        socket.on("image_data", function(data) {
+            if (data && data.image_base64) {
+                // Hiển thị ảnh từ dữ liệu Base64
+                let img = new Image();
+                img.src = "data:image/jpeg;base64," + data.image_base64;
+                img.onload = function() {
+                    let canvas = document.getElementById("cameraCanvas");
+                    let ctx = canvas.getContext("2d");
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                };
+            }
+        });
+
+        function sendCommand(command) {
+            let bienSo = document.getElementById("bienSoInput").value.trim();
+            if (!bienSo) {
+                alert("Vui lòng nhập biển số hoặc chờ nhận diện từ camera!");
+                return;
+            }
+
+            if (command === "open" && isDoorOpen) {
+                alert("Cửa đã mở, không thể mở thêm lần nữa!");
+                return;
+            }
+
+            if (command === "close" && !isDoorOpen) {
+                alert("Cửa đang đóng, không thể đóng thêm!");
+                return;
+            }
+
+            socket.emit("door_control", { "command": command, "bien_so": bienSo });
+
+            lastId++;
+            let table = document.getElementById("lich_su");
+            let row = table.insertRow();
+            let now = new Date().toLocaleString();
+
+            row.innerHTML = `
+                <td>${lastId}</td>
+                <td>${bienSo}</td>
+                <td>${now}</td>
+                <td>${command === 'open' ? 'Mở' : 'Đóng'}</td>
+            `;
+
+            isDoorOpen = (command === "open");
+            document.getElementById("btnOpen").disabled = isDoorOpen;
+            document.getElementById("btnClose").disabled = !isDoorOpen;
+        }
+
+        function captureImage() {
+            socket.emit("capture_image");
+            alert("Đã gửi yêu cầu chụp ảnh!");
+        }
+
+        function deleteImage() {
+            socket.emit("delete_image");
+            alert("Ảnh đã được xóa!");
+        }
+    </script>
+</body>
+</html>
